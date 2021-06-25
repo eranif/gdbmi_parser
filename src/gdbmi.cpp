@@ -2,13 +2,16 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include <absl/strings/match.h>
 #include <cctype>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <unordered_set>
+#include <vector>
 
 namespace
 {
@@ -16,7 +19,7 @@ absl::flat_hash_map<absl::string_view, gdbmi::eToken> words = {
     { "done", gdbmi::T_DONE },   { "running", gdbmi::T_RUNNING }, { "connected", gdbmi::T_CONNECTED },
     { "error", gdbmi::T_ERROR }, { "exit", gdbmi::T_EXIT },       { "stopped", gdbmi::T_STOPPED },
 };
-}
+} // namespace
 #define CHECK_EOF()                      \
     {                                    \
         if(m_buffer.length() == m_pos) { \
@@ -145,4 +148,176 @@ absl::string_view gdbmi::Tokenizer::read_word(eToken* type)
     }
     *type = T_WORD;
     return absl::string_view(m_buffer.data() + start_pos, m_pos - start_pos);
+}
+
+void gdbmi::Parser::parse(const std::string& buffer, Node::ptr_t parsed_tree)
+{
+    gdbmi::Tokenizer tokenizer(buffer);
+    gdbmi::eToken token;
+
+    constexpr int STATE_START = 0;
+    constexpr int STATE_RESULT_CLASS = 1;
+    constexpr int STATE_EQUAL = 2;
+    constexpr int STATE_POW = 3;
+    constexpr int STATE_BREAK = 4;
+    int state = STATE_START; // initial state
+    while(true) {
+        auto s = tokenizer.next_token(&token);
+        if(token == T_EOF || state == STATE_BREAK) {
+            break;
+        }
+        switch(state) {
+        case STATE_START:
+            // TODO: handle ~ & @ cases here
+            switch(token) {
+            case T_WORD:
+                // the token
+                txid = s;
+                state = STATE_POW;
+                break;
+            default:
+                break;
+            }
+            break;
+        case STATE_POW:
+            if(token == T_POW) {
+                state = STATE_RESULT_CLASS;
+            }
+            break;
+        case STATE_RESULT_CLASS:
+            switch(token) {
+            case T_DONE:
+            case T_RUNNING:
+            case T_CONNECTED:
+            case T_ERROR:
+            case T_EXIT:
+                result_class = s;
+                state = STATE_BREAK;
+                break;
+            default:
+                break;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    parse_properties(&tokenizer, parsed_tree);
+}
+
+void gdbmi::Parser::parse_properties(Tokenizer* tokenizer, Node::ptr_t parent)
+{
+    gdbmi::eToken token;
+
+#define RESET_PROP() \
+    name = {};       \
+    value = {};
+
+    constexpr int STATE_NAME = 0;
+    constexpr int STATE_EQUAL = 1;
+    constexpr int STATE_VALUE = 2;
+
+    int state = STATE_NAME; // initial state
+    absl::string_view name;
+    absl::string_view value;
+    while(true) {
+        auto s = tokenizer->next_token(&token);
+        if(token == T_EOF) {
+            break;
+        }
+        if(token == T_COMMA) {
+            state = STATE_NAME;
+            continue;
+        }
+
+        switch(state) {
+        case STATE_NAME:
+            switch(token) {
+            case T_CSTRING: {
+                // an array look-a-like
+                // create a fake entry id
+                std::string v;
+                absl::StrAppend(&v, s);
+                parent->add_child("", v);
+                break;
+            }
+            case T_TUPLE_CLOSE:
+            case T_LIST_CLOSE:
+                return;
+            case T_TUPLE_OPEN:
+            case T_LIST_OPEN: {
+                parse_properties(tokenizer, parent->add_child());
+                state = STATE_NAME;
+                RESET_PROP();
+                break;
+            }
+            case T_WORD:
+                // the name
+                name = s;
+                state = STATE_EQUAL; // expecting the =
+                break;
+            default:
+                break;
+            }
+            break;
+        case STATE_EQUAL:
+            switch(token) {
+            case T_EQUAL:
+                state = STATE_VALUE;
+                break;
+            default:
+                // we expect "=", if dont get one, clear the parser state
+                RESET_PROP();
+                state = STATE_NAME;
+                break;
+            }
+            break;
+        case STATE_VALUE:
+            switch(token) {
+            case T_TUPLE_CLOSE:
+            case T_LIST_CLOSE:
+                return;
+            case T_TUPLE_OPEN:
+            case T_LIST_OPEN: {
+                std::string n;
+                absl::StrAppend(&n, name);
+                parse_properties(tokenizer, parent->add_child(n));
+                state = STATE_NAME;
+                RESET_PROP();
+                break;
+            }
+            case T_CSTRING: {
+                state = STATE_NAME;
+                value = s;
+                std::string n, v;
+                absl::StrAppend(&n, name);
+                absl::StrAppend(&v, value);
+
+                parent->add_child(n, v);
+                RESET_PROP();
+                break;
+            }
+            default:
+                break;
+            }
+            break;
+        }
+    }
+#undef RESET_PROP
+}
+
+void gdbmi::Parser::print(Node::ptr_t node, int depth)
+{
+    if(!node->name.empty()) {
+        std::cout << std::string(depth, ' ') << node->name;
+    }
+
+    if(!node->value.empty()) {
+        std::cout << " -> " << node->value;
+    }
+    std::cout << std::endl;
+
+    for(auto child : node->children) {
+        print(child, depth + 4);
+    }
 }
