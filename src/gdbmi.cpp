@@ -1,19 +1,16 @@
-#include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
-#include "absl/strings/string_view.h"
 #include "gdbmi.hpp"
-#include <absl/strings/match.h>
 #include <cctype>
+#include <iostream>
 #include <memory>
 #include <sstream>
-#include <iostream>
 #include <stdexcept>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 namespace
 {
-absl::flat_hash_map<absl::string_view, gdbmi::eToken> words = {
+std::unordered_map<std::string, gdbmi::eToken> words = {
     { "done", gdbmi::T_DONE },   { "running", gdbmi::T_RUNNING }, { "connected", gdbmi::T_CONNECTED },
     { "error", gdbmi::T_ERROR }, { "exit", gdbmi::T_EXIT },       { "stopped", gdbmi::T_STOPPED },
 };
@@ -26,22 +23,22 @@ absl::flat_hash_map<absl::string_view, gdbmi::eToken> words = {
         }                                \
     }
 
-#define RETURN_TYPE(ret_type)                                     \
-    {                                                             \
-        *type = ret_type;                                         \
-        ++m_pos;                                                  \
-        return absl::string_view(m_buffer.data() + m_pos - 1, 1); \
+#define RETURN_TYPE(ret_type)                              \
+    {                                                      \
+        *type = ret_type;                                  \
+        ++m_pos;                                           \
+        return StringView(m_buffer.data() + m_pos - 1, 1); \
     }
 
-gdbmi::Tokenizer::Tokenizer(absl::string_view buffer)
+gdbmi::Tokenizer::Tokenizer(StringView buffer)
     : m_buffer(buffer)
 {
 }
 
-absl::string_view gdbmi::Tokenizer::next_token(eToken* type)
+gdbmi::StringView gdbmi::Tokenizer::next_token(eToken* type)
 {
     *type = T_EOF;
-    absl::string_view curbuf;
+    StringView curbuf;
 
     // skip leading whitespaces
     for(; m_pos < m_buffer.length(); ++m_pos) {
@@ -88,8 +85,9 @@ absl::string_view gdbmi::Tokenizer::next_token(eToken* type)
     } else {
 
         auto w = read_word(type);
-        if(words.contains(w)) {
-            *type = words[w];
+        std::string as_str = w.to_string();
+        if(words.count(as_str)) {
+            *type = words[as_str];
             return w;
         } else {
             *type = T_WORD;
@@ -98,7 +96,7 @@ absl::string_view gdbmi::Tokenizer::next_token(eToken* type)
     }
 }
 
-absl::string_view gdbmi::Tokenizer::read_string(eToken* type)
+gdbmi::StringView gdbmi::Tokenizer::read_string(eToken* type)
 {
     constexpr int STATE_NORMAL = 0;
     constexpr int STATE_IN_ESCAPE = 1;
@@ -112,7 +110,7 @@ absl::string_view gdbmi::Tokenizer::read_string(eToken* type)
             switch(ch) {
             case '"': {
                 *type = T_CSTRING;
-                auto cstr = absl::string_view(m_buffer.data() + start_pos, m_pos - start_pos);
+                auto cstr = StringView(m_buffer.data() + start_pos, m_pos - start_pos);
                 // now move the position
                 m_pos++;
                 return cstr;
@@ -138,14 +136,14 @@ absl::string_view gdbmi::Tokenizer::read_string(eToken* type)
     return {};
 }
 
-absl::string_view gdbmi::Tokenizer::read_word(eToken* type)
+gdbmi::StringView gdbmi::Tokenizer::read_word(eToken* type)
 {
     size_t start_pos = m_pos;
     while(std::isalnum(m_buffer[m_pos]) || m_buffer[m_pos] == '-' || m_buffer[m_pos] == '_') {
         ++m_pos;
     }
     *type = T_WORD;
-    return absl::string_view(m_buffer.data() + start_pos, m_pos - start_pos);
+    return StringView(m_buffer.data() + start_pos, m_pos - start_pos);
 }
 
 void gdbmi::Parser::parse(const std::string& buffer, Node::ptr_t parsed_tree)
@@ -216,8 +214,8 @@ void gdbmi::Parser::parse_properties(Tokenizer* tokenizer, Node::ptr_t parent)
     constexpr int STATE_VALUE = 2;
 
     int state = STATE_NAME; // initial state
-    absl::string_view name;
-    absl::string_view value;
+    StringView name;
+    StringView value;
     while(true) {
         auto s = tokenizer->next_token(&token);
         if(token == T_EOF) {
@@ -234,9 +232,7 @@ void gdbmi::Parser::parse_properties(Tokenizer* tokenizer, Node::ptr_t parent)
             case T_CSTRING: {
                 // an array look-a-like
                 // create a fake entry id
-                std::string v;
-                absl::StrAppend(&v, s);
-                parent->add_child("", v);
+                parent->add_child("", s.to_string());
                 break;
             }
             case T_TUPLE_CLOSE:
@@ -277,9 +273,7 @@ void gdbmi::Parser::parse_properties(Tokenizer* tokenizer, Node::ptr_t parent)
                 return;
             case T_TUPLE_OPEN:
             case T_LIST_OPEN: {
-                std::string n;
-                absl::StrAppend(&n, name);
-                parse_properties(tokenizer, parent->add_child(n));
+                parse_properties(tokenizer, parent->add_child(name.to_string()));
                 state = STATE_NAME;
                 RESET_PROP();
                 break;
@@ -287,11 +281,7 @@ void gdbmi::Parser::parse_properties(Tokenizer* tokenizer, Node::ptr_t parent)
             case T_CSTRING: {
                 state = STATE_NAME;
                 value = s;
-                std::string n, v;
-                absl::StrAppend(&n, name);
-                absl::StrAppend(&v, value);
-
-                parent->add_child(n, v);
+                parent->add_child(name.to_string(), value.to_string());
                 RESET_PROP();
                 break;
             }
@@ -306,6 +296,10 @@ void gdbmi::Parser::parse_properties(Tokenizer* tokenizer, Node::ptr_t parent)
 
 void gdbmi::Parser::print(Node::ptr_t node, int depth)
 {
+    if(depth == 0 && !txid.empty()) {
+        std::cout << "Token: " << txid.to_string() << std::endl;
+    }
+    
     if(!node->name.empty()) {
         std::cout << std::string(depth, ' ') << node->name;
     }

@@ -13,7 +13,7 @@ if (MINGW)
 endif()
 
 # Process Abseil's CMake build system
-add_subdirectory(abseil-cpp)
+#add_subdirectory(abseil-cpp)
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
 
@@ -23,12 +23,12 @@ add_library(gdbmi_parser src/gdbmi.cpp
 add_executable(gdbmi_test src/main.cpp)
 
 # Declare dependency on the absl::strings library
-target_link_libraries(gdbmi_parser 
-                        absl::strings 
-                        absl::base 
-                        absl::hash 
-                        absl::flat_hash_map 
-                        absl::flat_hash_set)
+target_link_libraries(gdbmi_parser)
+#                      absl::strings 
+#                      absl::base 
+#                      absl::hash 
+#                      absl::flat_hash_map 
+#                      absl::flat_hash_set)
 
 target_link_libraries(gdbmi_test gdbmi_parser)
 
