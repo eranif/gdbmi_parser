@@ -208,6 +208,7 @@ void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
                 break;
             case T_POW:
                 state = STATE_RESULT_CLASS;
+                result->line_type = LT_RESULT;
                 break;
             default:
                 break;
@@ -216,6 +217,7 @@ void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
         case STATE_POW:
             if(token == T_POW) {
                 state = STATE_RESULT_CLASS;
+                result->line_type = LT_RESULT;
             }
             break;
         case STATE_RESULT_CLASS:
