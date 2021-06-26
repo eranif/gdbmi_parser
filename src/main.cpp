@@ -3,6 +3,7 @@
 #include "gdbmi.hpp"
 #include <memory>
 #include <string>
+#include <iostream>
 
 int main(int argc, char** argv)
 {
@@ -19,11 +20,11 @@ int main(int argc, char** argv)
         parser.print(tree);
     }
 
-    std::cout << std::endl << std::endl << "printing second one" << std::endl << std::endl;
-    {
-        gdbmi::Node::ptr_t tree = std::make_shared<gdbmi::Node>();
-        parser.parse(input_str_2, tree);
-        parser.print(tree);
-    }
+//    std::cout << std::endl << std::endl << "printing second one" << std::endl << std::endl;
+//    {
+//        gdbmi::Node::ptr_t tree = std::make_shared<gdbmi::Node>();
+//        parser.parse(input_str_2, tree);
+//        parser.print(tree);
+//    }
     return 0;
 }
