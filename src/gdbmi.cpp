@@ -146,7 +146,7 @@ gdbmi::StringView gdbmi::Tokenizer::read_word(eToken* type)
     return StringView(m_buffer.data() + start_pos, m_pos - start_pos);
 }
 
-void gdbmi::Parser::parse(const std::string& buffer, Node::ptr_t parsed_tree)
+void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
 {
     gdbmi::Tokenizer tokenizer(buffer);
     gdbmi::eToken token;
@@ -168,7 +168,7 @@ void gdbmi::Parser::parse(const std::string& buffer, Node::ptr_t parsed_tree)
             switch(token) {
             case T_WORD:
                 // the token
-                txid = s;
+                result->txid = s;
                 state = STATE_POW;
                 break;
             default:
@@ -187,7 +187,7 @@ void gdbmi::Parser::parse(const std::string& buffer, Node::ptr_t parsed_tree)
             case T_CONNECTED:
             case T_ERROR:
             case T_EXIT:
-                result_class = s;
+                result->result_class = s;
                 state = STATE_BREAK;
                 break;
             default:
@@ -198,7 +198,7 @@ void gdbmi::Parser::parse(const std::string& buffer, Node::ptr_t parsed_tree)
             break;
         }
     }
-    parse_properties(&tokenizer, parsed_tree);
+    parse_properties(&tokenizer, result->tree);
 }
 
 void gdbmi::Parser::parse_properties(Tokenizer* tokenizer, Node::ptr_t parent)
@@ -296,10 +296,6 @@ void gdbmi::Parser::parse_properties(Tokenizer* tokenizer, Node::ptr_t parent)
 
 void gdbmi::Parser::print(Node::ptr_t node, int depth)
 {
-    if(depth == 0 && !txid.empty()) {
-        std::cout << "Token: " << txid.to_string() << std::endl;
-    }
-    
     if(!node->name.empty()) {
         std::cout << std::string(depth, ' ') << node->name;
     }

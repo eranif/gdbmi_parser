@@ -1,7 +1,7 @@
 #include "gdbmi.hpp"
+#include <iostream>
 #include <memory>
 #include <string>
-#include <iostream>
 
 int main(int argc, char** argv)
 {
@@ -13,16 +13,18 @@ int main(int argc, char** argv)
 
     gdbmi::Parser parser;
     {
-        gdbmi::Node::ptr_t tree = std::make_shared<gdbmi::Node>();
-        parser.parse(input_str, tree);
-        parser.print(tree);
+        gdbmi::ParsedResult result;
+        parser.parse(input_str, &result);
+        parser.print(result.tree);
+
+        std::cout << result["BreakpointTable"]["hdr"]["0"]["alignment"].value << std::endl;
     }
 
-//    std::cout << std::endl << std::endl << "printing second one" << std::endl << std::endl;
-//    {
-//        gdbmi::Node::ptr_t tree = std::make_shared<gdbmi::Node>();
-//        parser.parse(input_str_2, tree);
-//        parser.print(tree);
-//    }
+    //    std::cout << std::endl << std::endl << "printing second one" << std::endl << std::endl;
+    //    {
+    //        gdbmi::Node::ptr_t tree = std::make_shared<gdbmi::Node>();
+    //        parser.parse(input_str_2, tree);
+    //        parser.print(tree);
+    //    }
     return 0;
 }
