@@ -14,7 +14,43 @@ std::unordered_map<std::string, gdbmi::eToken> words = {
     { "done", gdbmi::T_DONE },   { "running", gdbmi::T_RUNNING }, { "connected", gdbmi::T_CONNECTED },
     { "error", gdbmi::T_ERROR }, { "exit", gdbmi::T_EXIT },       { "stopped", gdbmi::T_STOPPED },
 };
+
+void trim_both(std::string& str)
+{
+    static std::string trimString(" \r\n\t\v");
+    str.erase(0, str.find_first_not_of(trimString));
+    str.erase(str.find_last_not_of(trimString) + 1);
+}
+
+void strip_double_backslashes(std::string& str)
+{
+    std::string fixed_str;
+    fixed_str.reserve(str.length());
+
+    char last_char = 0;
+    for(size_t i = 0; i < str.length(); ++i) {
+        char ch = str[i];
+        if(ch == '\\' && last_char == '\\') {
+            // do nothing
+        } else {
+            fixed_str.append(1, ch);
+        }
+        last_char = ch;
+    }
+    str.swap(fixed_str);
+    trim_both(str);
+}
+
 } // namespace
+
+gdbmi::Node::ptr_t gdbmi::Node::add_child(std::string name, std::string value)
+{
+    auto c = do_add_child(name);
+    c->value = std::move(value);
+    strip_double_backslashes(c->value);
+    return c;
+}
+
 #define CHECK_EOF()                      \
     {                                    \
         if(m_buffer.length() == m_pos) { \
@@ -153,7 +189,6 @@ void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
 
     constexpr int STATE_START = 0;
     constexpr int STATE_RESULT_CLASS = 1;
-    constexpr int STATE_EQUAL = 2;
     constexpr int STATE_POW = 3;
     constexpr int STATE_BREAK = 4;
     int state = STATE_START; // initial state
@@ -171,6 +206,9 @@ void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
                 result->txid = s;
                 state = STATE_POW;
                 break;
+            case T_POW:
+                state = STATE_RESULT_CLASS;
+                break;
             default:
                 break;
             }
@@ -187,7 +225,7 @@ void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
             case T_CONNECTED:
             case T_ERROR:
             case T_EXIT:
-                result->result_class = s;
+                result->line_type_context = s;
                 state = STATE_BREAK;
                 break;
             default:
