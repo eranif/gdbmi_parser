@@ -172,6 +172,11 @@ gdbmi::StringView gdbmi::Tokenizer::read_string(eToken* type)
     return {};
 }
 
+gdbmi::StringView gdbmi::Tokenizer::remainder()
+{
+    return StringView(m_buffer.data() + m_pos, m_buffer.length() - m_pos);
+}
+
 gdbmi::StringView gdbmi::Tokenizer::read_word(eToken* type)
 {
     size_t start_pos = m_pos;
@@ -187,28 +192,56 @@ void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
     gdbmi::Tokenizer tokenizer(buffer);
     gdbmi::eToken token;
 
+    bool cont = true;
     constexpr int STATE_START = 0;
     constexpr int STATE_RESULT_CLASS = 1;
     constexpr int STATE_POW = 3;
-    constexpr int STATE_BREAK = 4;
     int state = STATE_START; // initial state
-    while(true) {
+    while(cont) {
         auto s = tokenizer.next_token(&token);
-        if(token == T_EOF || state == STATE_BREAK) {
+        if(token == T_EOF) {
             break;
         }
         switch(state) {
         case STATE_START:
-            // TODO: handle ~ & @ cases here
             switch(token) {
+            case T_STAR:
+                result->line_type = LT_EXEC_ASYNC_OUTPUT;
+                state = STATE_RESULT_CLASS;
+                break;
+            case T_EQUAL:
+                result->line_type = LT_NOTIFY_ASYNC_OUTPUT;
+                state = STATE_RESULT_CLASS;
+                break;
+            case T_PLUS:
+                result->line_type = LT_STATUS_ASYNC_OUTPUT;
+                state = STATE_RESULT_CLASS;
+                break;
             case T_WORD:
-                // the token
+                // token read while in this stage, can only be the txid
                 result->txid = s;
-                state = STATE_POW;
                 break;
             case T_POW:
-                state = STATE_RESULT_CLASS;
                 result->line_type = LT_RESULT;
+                state = STATE_RESULT_CLASS;
+                break;
+            case T_STREAM_OUTPUT: // ~
+                // text that should be output to the console
+                result->line_type_context = tokenizer.remainder();
+                result->line_type = LT_CONSOLE_STREAM_OUTPUT;
+                cont = false;
+                break;
+            case T_TARGET_OUTPUT: // @
+                // output produced by the debuggee ("target")
+                result->line_type_context = tokenizer.remainder();
+                result->line_type = LT_TARGET_STREAM_OUTPUT;
+                cont = false;
+                break;
+            case T_LOG_OUTPUT: // &
+                // gdb internal messages
+                result->line_type_context = tokenizer.remainder();
+                result->line_type = LT_LOG_STREAM_OUTPUT;
+                cont = false;
                 break;
             default:
                 break;
@@ -217,7 +250,6 @@ void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
         case STATE_POW:
             if(token == T_POW) {
                 state = STATE_RESULT_CLASS;
-                result->line_type = LT_RESULT;
             }
             break;
         case STATE_RESULT_CLASS:
@@ -228,8 +260,12 @@ void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
             case T_ERROR:
             case T_EXIT:
                 result->line_type_context = s;
-                state = STATE_BREAK;
+                cont = false;
                 break;
+            case T_WORD:
+            case T_STOPPED:
+                result->line_type_context = s;
+                cont = false;
             default:
                 break;
             }

@@ -14,10 +14,10 @@ enum eToken {
     T_LIST_CLOSE,    // ]
     T_TUPLE_OPEN,    // {
     T_TUPLE_CLOSE,   // }
-    T_EQUAL,         // =
     T_POW,           // ^
     T_STAR,          // *
     T_PLUS,          // +
+    T_EQUAL,         // =
     T_TARGET_OUTPUT, // @
     T_STREAM_OUTPUT, // ~
     T_LOG_OUTPUT,    // &
@@ -87,6 +87,10 @@ protected:
 public:
     Tokenizer(StringView buffer);
     StringView next_token(eToken* type);
+    /**
+     * @brief return the remainder string from m_pos -> end
+     */
+    StringView remainder();
 };
 
 struct Node {
