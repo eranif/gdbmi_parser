@@ -10,28 +10,34 @@
 
 namespace
 {
-std::unordered_map<std::string, gdbmi::eToken> words = {
+std::unordered_map<wxString, gdbmi::eToken> words = {
     { "done", gdbmi::T_DONE },   { "running", gdbmi::T_RUNNING }, { "connected", gdbmi::T_CONNECTED },
     { "error", gdbmi::T_ERROR }, { "exit", gdbmi::T_EXIT },       { "stopped", gdbmi::T_STOPPED },
 };
 
-void trim_both(std::string& str)
+void trim_both(wxString& str)
 {
-    static std::string trimString(" \r\n\t\v");
+    static wxString trimString(" \r\n\t\v");
     str.erase(0, str.find_first_not_of(trimString));
     str.erase(str.find_last_not_of(trimString) + 1);
 }
 
-void strip_double_backslashes(std::string& str)
+void strip_double_backslashes(wxString& str)
 {
-    std::string fixed_str;
+    wxString fixed_str;
     fixed_str.reserve(str.length());
 
-    char last_char = 0;
+    wxChar last_char = 0;
     for(size_t i = 0; i < str.length(); ++i) {
-        char ch = str[i];
+        wxChar ch = str[i];
         if(ch == '\\' && last_char == '\\') {
             // do nothing
+        } else if(ch == '"' && last_char == '\\') {
+            // gdb adds an extra annoying '\"' to double quotes
+            // making it really hard to view strings in the debugger
+            // UI, so lets remove it
+            fixed_str.erase(fixed_str.length() - 1);
+            fixed_str.append(1, ch);
         } else {
             fixed_str.append(1, ch);
         }
@@ -43,7 +49,7 @@ void strip_double_backslashes(std::string& str)
 
 } // namespace
 
-gdbmi::Node::ptr_t gdbmi::Node::add_child(std::string name, std::string value)
+gdbmi::Node::ptr_t gdbmi::Node::add_child(const wxString& name, const wxString& value)
 {
     auto c = do_add_child(name);
     c->value = std::move(value);
@@ -121,7 +127,7 @@ gdbmi::StringView gdbmi::Tokenizer::next_token(eToken* type)
     } else {
 
         auto w = read_word(type);
-        std::string as_str = w.to_string();
+        wxString as_str = w.to_string();
         if(words.count(as_str)) {
             *type = words[as_str];
             return w;
@@ -140,7 +146,7 @@ gdbmi::StringView gdbmi::Tokenizer::read_string(eToken* type)
     int state = STATE_NORMAL;
     size_t start_pos = m_pos;
     for(; m_pos < m_buffer.length(); ++m_pos) {
-        char ch = m_buffer[m_pos];
+        wxChar ch = m_buffer[m_pos];
         switch(state) {
         case STATE_NORMAL:
             switch(ch) {
@@ -160,7 +166,7 @@ gdbmi::StringView gdbmi::Tokenizer::read_string(eToken* type)
             break;
         case STATE_IN_ESCAPE:
         default:
-            // we have nothing to do in this state, but only skip the escaped char
+            // we have nothing to do in this state, but only skip the escaped wxChar
             // and return to the normal state
             state = STATE_NORMAL;
             break;
@@ -174,7 +180,9 @@ gdbmi::StringView gdbmi::Tokenizer::read_string(eToken* type)
 
 gdbmi::StringView gdbmi::Tokenizer::remainder()
 {
-    return StringView(m_buffer.data() + m_pos, m_buffer.length() - m_pos);
+    auto s = StringView(m_buffer.data() + m_pos, m_buffer.length() - m_pos);
+    m_pos = m_buffer.length();
+    return s;
 }
 
 gdbmi::StringView gdbmi::Tokenizer::read_word(eToken* type)
@@ -187,7 +195,7 @@ gdbmi::StringView gdbmi::Tokenizer::read_word(eToken* type)
     return StringView(m_buffer.data() + start_pos, m_pos - start_pos);
 }
 
-void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
+void gdbmi::Parser::parse(const wxString& buffer, ParsedResult* result)
 {
     gdbmi::Tokenizer tokenizer(buffer);
     gdbmi::eToken token;
@@ -266,6 +274,7 @@ void gdbmi::Parser::parse(const std::string& buffer, ParsedResult* result)
             case T_STOPPED:
                 result->line_type_context = s;
                 cont = false;
+                break;
             default:
                 break;
             }
@@ -372,8 +381,9 @@ void gdbmi::Parser::parse_properties(Tokenizer* tokenizer, Node::ptr_t parent)
 
 void gdbmi::Parser::print(Node::ptr_t node, int depth)
 {
+    std::cout << wxString(depth, ' ');
     if(!node->name.empty()) {
-        std::cout << std::string(depth, ' ') << node->name;
+        std::cout << node->name;
     }
 
     if(!node->value.empty()) {
