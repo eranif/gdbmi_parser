@@ -1,6 +1,7 @@
 #ifndef GDBMI_HPP
 #define GDBMI_HPP
 
+#include "wxStringHash.h"
 #include <memory>
 #include <sstream>
 #include <string>
@@ -115,15 +116,7 @@ public:
     vec_t children;
     std::unordered_map<wxString, ptr_t> children_map;
 
-    Node& find_child(const wxString& name) const
-    {
-        if(children_map.count(name) == 0) {
-            thread_local Node emptyNode;
-            return emptyNode;
-        }
-        return *(children_map.find(name)->second);
-    }
-
+    Node& find_child(const wxString& name) const;
     Node& operator[](const wxString& name) const { return find_child(name); }
     Node& operator[](size_t index) const
     {
